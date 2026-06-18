@@ -12,9 +12,9 @@ def make_HiPPO(N):
     :params N: int32, state size
     :returns: N x N HiPPO LegS matrix
     """
-    P = np.sqrt(1 + 2 * np.arange(N))
-    A = P[:, np.newaxis] * P[np.newaxis, :]
-    A = np.tril(A) - np.diag(np.arange(N))
+    P = onp.sqrt(1 + 2 * onp.arange(N))
+    A = P[:, onp.newaxis] * P[onp.newaxis, :]
+    A = onp.tril(A) - onp.diag(onp.arange(N))
     return -A
 
 
@@ -30,10 +30,10 @@ def make_NPLR_HiPPO(N):
     hippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    P = np.sqrt(np.arange(N) + 0.5)
+    P = onp.sqrt(onp.arange(N) + 0.5)
 
     # HiPPO also specifies the B matrix
-    B = np.sqrt(2 * np.arange(N) + 1.0)
+    B = onp.sqrt(2 * onp.arange(N) + 1.0)
     return hippo, P, B
 
 
