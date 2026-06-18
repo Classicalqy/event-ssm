@@ -1,7 +1,7 @@
 from jax import random
+import numpy as onp
 import jax.numpy as np
 from jax.nn.initializers import lecun_normal
-from jax.numpy.linalg import eigh
 
 
 def make_HiPPO(N):
@@ -47,7 +47,9 @@ def make_DPLR_HiPPO(N):
     :returns:   eigenvalues Lambda, low-rank term P, conjugated HiPPO input matrix B,
                 eigenvectors V, HiPPO B pre-conjugation
     """
-    A, P, B = make_NPLR_HiPPO(N)
+    # This initialization is tiny and static. Use host NumPy for the eigensolve
+    # to avoid GPU cuSolver initialization failures on some CUDA/JAX stacks.
+    A, P, B = [onp.asarray(x) for x in make_NPLR_HiPPO(N)]
 
     S = A + P[:, np.newaxis] * P[np.newaxis, :]
 
@@ -55,12 +57,18 @@ def make_DPLR_HiPPO(N):
     Lambda_real = np.mean(S_diag) * np.ones_like(S_diag)
 
     # Diagonalize S to V \Lambda V^*
-    Lambda_imag, V = eigh(S * -1j)
+    Lambda_imag, V = onp.linalg.eigh(S * -1j)
 
     P = V.conj().T @ P
     B_orig = B
     B = V.conj().T @ B
-    return Lambda_real + 1j * Lambda_imag, P, B, V, B_orig
+    return (
+        np.asarray(Lambda_real + 1j * Lambda_imag),
+        np.asarray(P),
+        np.asarray(B),
+        np.asarray(V),
+        np.asarray(B_orig),
+    )
 
 
 def log_step_initializer(dt_min=0.001, dt_max=0.1):
