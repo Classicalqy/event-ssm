@@ -181,7 +181,7 @@ def get_learning_rate_fn(lr, total_steps, warmup_steps, schedule, **kwargs):
 
 def get_optimizer(opt_config):
 
-    ssm_lrs = ["B", "Lambda_re", "Lambda_im"]
+    ssm_lrs = ["B", "Lambda_re", "Lambda_im", "raw_alpha", "omega"]
     ssm_fn = map_nested_fn(
         lambda k, _: "ssm"
         if k in ssm_lrs

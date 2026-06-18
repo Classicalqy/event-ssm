@@ -9,6 +9,7 @@ model:
     clip_eigs: false
   ssm:
     discretization: async
+    a_mode: complex_diagonal
     d_model: 16
     d_ssm: 16
     ssm_block_size: 8

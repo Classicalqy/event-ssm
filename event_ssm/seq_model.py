@@ -43,6 +43,7 @@ class StackedEncoderModel(nn.Module):
     pooling_every_n_layers: int = 1
     pooling_mode: str = "last"
     state_expansion_factor: int = 1
+    a_mode: str = "complex_diagonal"
 
     def setup(self):
         """
@@ -76,7 +77,8 @@ class StackedEncoderModel(nn.Module):
                     bn_momentum=self.bn_momentum,
                     step_rescale=self.step_rescale,
                     pooling_stride=self.pooling_stride,
-                    pooling_mode=self.pooling_mode
+                    pooling_mode=self.pooling_mode,
+                    a_mode=self.a_mode
                 )
             )
 
@@ -205,6 +207,7 @@ class ClassificationModel(nn.Module):
     pooling_every_n_layers: int = 1
     pooling_mode: str = "last"
     state_expansion_factor: int = 1
+    a_mode: str = "complex_diagonal"
 
     def setup(self):
         """
@@ -227,7 +230,8 @@ class ClassificationModel(nn.Module):
             pooling_stride=self.pooling_stride,
             pooling_every_n_layers=self.pooling_every_n_layers,
             pooling_mode=self.pooling_mode,
-            state_expansion_factor=self.state_expansion_factor
+            state_expansion_factor=self.state_expansion_factor,
+            a_mode=self.a_mode
         )
         self.decoder = nn.Dense(self.num_classes)
 

@@ -77,6 +77,7 @@ class SequenceStage(nn.Module):
     pooling_stride: int = 1
     pooling_mode: str = "last"
     state_expansion_factor: int = 1
+    a_mode: str = "complex_diagonal"
 
     @nn.compact
     def __call__(self, x, integration_timesteps, train: bool):
@@ -99,6 +100,7 @@ class SequenceStage(nn.Module):
             batchnorm=self.batchnorm,
             bn_momentum=self.bn_momentum,
             step_rescale=self.step_rescale,
+            a_mode=self.a_mode,
         )
 
         # first layer with pooling
@@ -152,6 +154,7 @@ class SequenceLayer(nn.Module):
     step_rescale: float = 1.0
     pooling_stride: int = 1
     pooling_mode: str = "last"
+    a_mode: str = "complex_diagonal"
 
     @nn.compact
     def __call__(self, x, integration_timesteps, train: bool):
@@ -173,7 +176,7 @@ class SequenceLayer(nn.Module):
         x = self.ssm(
             H_in=self.d_model_in, H_out=self.d_model_out, P=self.d_ssm, block_size=self.block_size,
             step_rescale=self.step_rescale, discretization=self.discretization,
-            stride=self.pooling_stride, pooling_mode=self.pooling_mode
+            stride=self.pooling_stride, pooling_mode=self.pooling_mode, a_mode=self.a_mode
         )(x, integration_timesteps)
 
         # non-linear activation function
