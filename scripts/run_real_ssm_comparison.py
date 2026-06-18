@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--seeds", type=int, nargs="+", default=SEEDS)
     parser.add_argument("--a-modes", nargs="+", default=A_MODES)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--output-root", default="outputs/real_ssm_comparison")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -133,6 +134,7 @@ def main():
                 "task=tutorial",
                 f"seed={seed}",
                 f"training.num_epochs={args.epochs}",
+                f"training.num_workers={args.num_workers}",
                 f"model.ssm.a_mode={a_mode}",
                 f"output_dir={run_dir}",
                 "logging.interval=1000",
