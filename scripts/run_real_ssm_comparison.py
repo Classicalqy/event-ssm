@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -8,7 +9,6 @@ from pathlib import Path
 
 
 A_MODES = [
-    "shared_real_decay",
     "independent_real_decay",
     "real_rotation2x2",
 ]
@@ -17,11 +17,17 @@ SEEDS = [1234, 2345, 3456]
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the real-valued SSM comparison matrix.")
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument(
+        "--task",
+        default="spiking-heidelberg-digits",
+        help="Hydra task configuration to train (default: SHD medium benchmark).",
+    )
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--seeds", type=int, nargs="+", default=SEEDS)
     parser.add_argument("--a-modes", nargs="+", default=A_MODES)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--output-root", default="outputs/real_ssm_comparison")
+    parser.add_argument("--jax-visible-devices", default="0")
+    parser.add_argument("--output-root", default="outputs/shd_medium_real_ssm_comparison")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -131,7 +137,7 @@ def main():
             cmd = [
                 sys.executable,
                 "run_training.py",
-                "task=tutorial",
+                f"task={args.task}",
                 f"seed={seed}",
                 f"training.num_epochs={args.epochs}",
                 f"training.num_workers={args.num_workers}",
@@ -139,9 +145,12 @@ def main():
                 f"output_dir={run_dir}",
                 "logging.interval=1000",
             ]
+            env = os.environ.copy()
+            if args.jax_visible_devices:
+                env["JAX_VISIBLE_DEVICES"] = args.jax_visible_devices
             print(" ".join(cmd), flush=True)
             if not args.dry_run:
-                subprocess.run(cmd, cwd=repo_root, check=True)
+                subprocess.run(cmd, cwd=repo_root, check=True, env=env)
 
             row = {
                 "a_mode": a_mode,

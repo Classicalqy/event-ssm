@@ -164,5 +164,10 @@ cython_debug/
 wandb/
 cache_dir/
 raw_datasets/
+
+# Generated experiment artifacts
 outputs/
 *.out
+
+# macOS Finder metadata
+.DS_Store
