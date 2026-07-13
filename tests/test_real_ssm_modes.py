@@ -37,6 +37,7 @@ def test_rotation_gamma_reduces_to_real_decay_when_omega_is_zero():
 
 
 def test_real_modes_initialize_with_real_parameters_and_outputs():
+    parameter_counts = {}
     for a_mode in ["shared_real_decay", "independent_real_decay", "real_rotation2x2"]:
         ssm = init_S5SSM(
             C_init="lecun_normal",
@@ -64,7 +65,7 @@ def test_real_modes_initialize_with_real_parameters_and_outputs():
             pooling_mode="timepool",
             state_expansion_factor=1,
         )
-        x = jnp.zeros((2, 16), dtype=jnp.int32)
+        x = jax.random.randint(jax.random.PRNGKey(2), (2, 16), 0, 700)
         integration_timesteps = jnp.ones((2, 16), dtype=jnp.float32) * 0.001
         lengths = jnp.ones((2,), dtype=jnp.int32) * 16
         variables = model.init(
@@ -82,4 +83,30 @@ def test_real_modes_initialize_with_real_parameters_and_outputs():
 
         assert logits.shape == (2, 20)
         assert not jnp.iscomplexobj(logits)
+        assert jnp.isfinite(logits).all()
         assert complex_params == []
+
+        log_steps = []
+
+        def collect_log_steps(path, value):
+            if path[-1].key == "log_step":
+                log_steps.append(value)
+            return value
+
+        jax.tree_util.tree_map_with_path(collect_log_steps, variables["params"])
+        assert log_steps
+        assert all(step.shape == (8, 1) for step in log_steps)
+        assert all(jnp.all(jnp.exp(step) >= 0.004) for step in log_steps)
+        assert all(jnp.all(jnp.exp(step) <= 0.1) for step in log_steps)
+
+        loss, gradients = jax.value_and_grad(
+            lambda params: jnp.mean(model.apply({"params": params}, x, integration_timesteps, lengths, False) ** 2)
+        )(variables["params"])
+        assert jnp.isfinite(loss)
+        assert all(jnp.isfinite(gradient).all() for gradient in jax.tree_util.tree_leaves(gradients))
+
+        parameter_counts[a_mode] = sum(
+            param.size for param in jax.tree_util.tree_leaves(variables["params"])
+        )
+
+    assert parameter_counts["independent_real_decay"] == parameter_counts["real_rotation2x2"]

@@ -249,19 +249,26 @@ class S5SSM(nn.Module):
 
         B_init = lecun_normal()
         if self.real_mode:
+            if self.P % 2 != 0:
+                raise ValueError("Real-valued comparison modes require an even state size P")
+
             alpha_init = np.maximum(-Lambda.real, 1e-4)
             if self.a_mode == "shared_real_decay":
                 raw_alpha_init = inverse_softplus(np.array([alpha_init.mean()]))
             elif self.a_mode == "independent_real_decay":
                 raw_alpha_init = inverse_softplus(alpha_init)
             else:
-                if self.P % 2 != 0:
-                    raise ValueError("real_rotation2x2 requires an even state size P")
                 raw_alpha_init = inverse_softplus(alpha_init.reshape(-1, 2).mean(axis=-1))
                 omega_init = np.abs(Lambda.imag[:self.P // 2])
                 self.omega = self.param("omega", lambda rng, shape: omega_init, (None,))
 
             self.raw_alpha = self.param("raw_alpha", lambda rng, shape: raw_alpha_init, (None,))
+            # One time scale per real-state pair keeps the diagonal and 2x2
+            # parameterizations equally sized while retaining S5's stable,
+            # learnable async discretization scale.
+            self.log_step = self.param("log_step",
+                                       init_log_steps,
+                                       (self.P // 2, self.dt_min, self.dt_max))
             self.B = self.param("B", B_init, (self.P, self.H_in))
             self.C = self.param("C", lecun_normal(), (self.H_out, self.P))
         else:
@@ -339,9 +346,14 @@ class S5SSM(nn.Module):
         else:
             raise NotImplementedError(f"A mode {self.a_mode} not implemented")
 
-    def diagonal_real_discretize(self, alpha, time_delta):
+    def get_real_step(self):
+        step = self.step_rescale * np.exp(self.log_step[:, 0])
+        if self.a_mode in ["shared_real_decay", "independent_real_decay"]:
+            return np.repeat(step, 2)
+        return step
+
+    def diagonal_real_discretize(self, alpha, step, time_delta):
         Lambda = -alpha
-        step = self.step_rescale
 
         if self.discretization == "zoh":
             Delta = step * time_delta
@@ -358,9 +370,7 @@ class S5SSM(nn.Module):
 
         return Lambda_bar, gamma_bar
 
-    def rotation2x2_discretize(self, alpha, omega, time_delta):
-        step = self.step_rescale
-
+    def rotation2x2_discretize(self, alpha, omega, step, time_delta):
         def exp_rotation(delta):
             decay = np.exp(-alpha * delta)
             theta = omega * delta
@@ -392,9 +402,10 @@ class S5SSM(nn.Module):
 
         if self.a_mode in ["shared_real_decay", "independent_real_decay"]:
             alpha = self.get_alpha()
+            step = self.get_real_step()
 
             def discretize_and_project_inputs(u, _timestep):
-                Lambda_bar, gamma_bar = self.diagonal_real_discretize(alpha, _timestep)
+                Lambda_bar, gamma_bar = self.diagonal_real_discretize(alpha, step, _timestep)
                 Bu = gamma_bar * (self.B @ u)
                 return Lambda_bar, Bu
 
@@ -411,9 +422,10 @@ class S5SSM(nn.Module):
         elif self.a_mode == "real_rotation2x2":
             alpha = self.get_alpha()
             omega = self.omega
+            step = self.get_real_step()
 
             def discretize_and_project_inputs(u, _timestep):
-                A, gamma = self.rotation2x2_discretize(alpha, omega, _timestep)
+                A, gamma = self.rotation2x2_discretize(alpha, omega, step, _timestep)
                 projected = (self.B @ u).reshape(-1, 2)
                 Bu = apply_rotation_pair(gamma[0], gamma[1], projected)
                 return A, Bu

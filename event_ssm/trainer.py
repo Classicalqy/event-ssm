@@ -1,7 +1,7 @@
 import time
 import os
 import json
-import sys
+import math
 import wandb
 from collections import defaultdict, OrderedDict
 from omegaconf import OmegaConf as om
@@ -196,10 +196,10 @@ class TrainerModule:
 
             self.train_state, step_metrics = self.train_step(self.train_state, batch, step_key)
 
-            # exit from training if loss is nan
-            if jnp.isnan(step_metrics['loss']).any():
-                print("EXITING TRAINING DUE TO NAN LOSS")
-                break
+            if not bool(jnp.isfinite(step_metrics['loss']).all()):
+                raise FloatingPointError(
+                    f"Non-finite training loss at epoch {self.epoch_idx}, batch {i + 1}"
+                )
 
             # record metrics
             for key in step_metrics:
@@ -329,10 +329,11 @@ class TrainerModule:
             [f"{k.split('/')[1].replace('Training ', '')}: {v:5.2f}" for k, v in train_metrics.items() if
              'Train' in k]))
 
-        # check metrics for nan values and possibly exit training
-        if jnp.isnan(train_metrics['Performance/Training loss']).item():
-            print("EXITING TRAINING DUE TO NAN LOSS")
-            sys.exit(1)
+        train_loss = train_metrics.get('Performance/Training loss')
+        if train_loss is None or not math.isfinite(train_loss):
+            raise FloatingPointError(
+                f"Non-finite or missing training loss at epoch {self.epoch_idx}"
+            )
 
     def on_validation_epoch_end(self, eval_metrics: Dict[str, Any]):
         """
@@ -349,6 +350,12 @@ class TrainerModule:
         print('-' * 89)
 
         self.save_metrics(f'eval_epoch_{str(self.epoch_idx).zfill(3)}', eval_metrics)
+
+        non_finite = [key for key, value in eval_metrics.items() if not math.isfinite(value)]
+        if non_finite:
+            raise FloatingPointError(
+                f"Non-finite validation metrics at epoch {self.epoch_idx}: {', '.join(non_finite)}"
+            )
 
         # Save best model
         if self.is_new_model_better(eval_metrics, self.best_eval_metrics):

@@ -26,7 +26,11 @@ def parse_args():
     parser.add_argument("--seeds", type=int, nargs="+", default=SEEDS)
     parser.add_argument("--a-modes", nargs="+", default=A_MODES)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--jax-visible-devices", default="0")
+    parser.add_argument(
+        "--jax-visible-devices",
+        default="0",
+        help="CUDA device IDs visible to each training subprocess (default: 0).",
+    )
     parser.add_argument("--output-root", default="outputs/shd_medium_real_ssm_comparison")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -147,7 +151,7 @@ def main():
             ]
             env = os.environ.copy()
             if args.jax_visible_devices:
-                env["JAX_VISIBLE_DEVICES"] = args.jax_visible_devices
+                env["CUDA_VISIBLE_DEVICES"] = args.jax_visible_devices
             print(" ".join(cmd), flush=True)
             if not args.dry_run:
                 subprocess.run(cmd, cwd=repo_root, check=True, env=env)
