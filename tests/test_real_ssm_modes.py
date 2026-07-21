@@ -5,6 +5,23 @@ from event_ssm.seq_model import BatchClassificationModel
 from event_ssm.ssm import apply_rotation_pair, init_S5SSM, rotation_gamma
 
 
+def has_param_named(params, target_name):
+    found = False
+
+    def visit(path, value):
+        nonlocal found
+        if path[-1].key == target_name:
+            found = True
+        return value
+
+    jax.tree_util.tree_map_with_path(visit, params)
+    return found
+
+
+def count_params(params):
+    return sum(param.size for param in jax.tree_util.tree_leaves(params))
+
+
 def test_rotation_pair_matches_decay_rotation_matrix():
     alpha = jnp.array([0.3])
     omega = jnp.array([1.7])
@@ -34,6 +51,50 @@ def test_rotation_gamma_reduces_to_real_decay_when_omega_is_zero():
     expected = (jnp.exp(-alpha * dt) - 1.0) / (-alpha)
     assert jnp.allclose(gamma_re, expected, atol=1e-6)
     assert jnp.allclose(gamma_im, jnp.zeros_like(gamma_im), atol=1e-6)
+
+
+def test_default_event_ssm_model_initializes_and_applies():
+    ssm = init_S5SSM(
+        C_init="lecun_normal",
+        dt_min=0.004,
+        dt_max=0.1,
+        conj_sym=False,
+        clip_eigs=False,
+    )
+    model = BatchClassificationModel(
+        ssm=ssm,
+        num_classes=20,
+        num_embeddings=700,
+        discretization="async",
+        a_mode="complex_diagonal",
+        d_model=16,
+        d_ssm=16,
+        ssm_block_size=8,
+        num_stages=1,
+        num_layers_per_stage=2,
+        dropout=0.1,
+        classification_mode="timepool",
+        prenorm=True,
+        batchnorm=False,
+        pooling_stride=2,
+        pooling_mode="timepool",
+        state_expansion_factor=1,
+    )
+    x = jax.random.randint(jax.random.PRNGKey(2), (2, 16), 0, 700)
+    integration_timesteps = jnp.ones((2, 16), dtype=jnp.float32) * 0.001
+    lengths = jnp.ones((2,), dtype=jnp.int32) * 16
+    variables = model.init(
+        {"params": jax.random.PRNGKey(0), "dropout": jax.random.PRNGKey(1)},
+        x,
+        integration_timesteps,
+        lengths,
+        True,
+    )
+    logits = model.apply(variables, x, integration_timesteps, lengths, False)
+
+    assert logits.shape == (2, 20)
+    assert jnp.isfinite(logits).all()
+    assert has_param_named(variables["params"], "D")
 
 
 def test_real_modes_initialize_with_real_parameters_and_outputs():
@@ -105,8 +166,59 @@ def test_real_modes_initialize_with_real_parameters_and_outputs():
         assert jnp.isfinite(loss)
         assert all(jnp.isfinite(gradient).all() for gradient in jax.tree_util.tree_leaves(gradients))
 
-        parameter_counts[a_mode] = sum(
-            param.size for param in jax.tree_util.tree_leaves(variables["params"])
+        parameter_counts[a_mode] = count_params(variables["params"])
+
+    assert parameter_counts["independent_real_decay"] == parameter_counts["real_rotation2x2"]
+
+
+def test_s5_style_model_supports_no_residual_pooling_and_no_d():
+    parameter_counts = {}
+    for a_mode in ["independent_real_decay", "real_rotation2x2"]:
+        ssm = init_S5SSM(
+            C_init="lecun_normal",
+            dt_min=0.004,
+            dt_max=0.1,
+            conj_sym=False,
+            clip_eigs=False,
+            use_D=False,
         )
+        model = BatchClassificationModel(
+            ssm=ssm,
+            num_classes=20,
+            num_embeddings=700,
+            discretization="async",
+            a_mode=a_mode,
+            d_model=16,
+            d_ssm=16,
+            ssm_block_size=8,
+            num_stages=2,
+            num_layers_per_stage=1,
+            dropout=0.0,
+            activation_fn="relu",
+            classification_mode="last",
+            use_residual=False,
+            prenorm=False,
+            batchnorm=False,
+            layernorm=False,
+            pooling_stride=2,
+            pooling_mode="last",
+            state_expansion_factor=1,
+        )
+        x = jax.random.randint(jax.random.PRNGKey(2), (2, 16), 0, 700)
+        integration_timesteps = jnp.ones((2, 16), dtype=jnp.float32) * 0.001
+        lengths = jnp.ones((2,), dtype=jnp.int32) * 16
+        variables = model.init(
+            {"params": jax.random.PRNGKey(0), "dropout": jax.random.PRNGKey(1)},
+            x,
+            integration_timesteps,
+            lengths,
+            True,
+        )
+        logits = model.apply(variables, x, integration_timesteps, lengths, False)
+
+        assert logits.shape == (2, 20)
+        assert jnp.isfinite(logits).all()
+        assert not has_param_named(variables["params"], "D")
+        parameter_counts[a_mode] = count_params(variables["params"])
 
     assert parameter_counts["independent_real_decay"] == parameter_counts["real_rotation2x2"]

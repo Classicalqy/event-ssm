@@ -175,6 +175,7 @@ class S5SSM(nn.Module):
     dt_max: float
     conj_sym: bool = True
     clip_eigs: bool = False
+    use_D: bool = True
     step_rescale: float = 1.0
     stride: int = 1
     pooling_mode: str = "last"
@@ -193,6 +194,7 @@ class S5SSM(nn.Module):
     :param dt_max: float, maximum value of log timestep
     :param conj_sym: bool, whether to enforce conjugate symmetry in the state space operator
     :param clip_eigs: bool, whether to clip eigenvalues of the state space operator
+    :param use_D: bool, whether to use direct feedthrough term
     :param step_rescale: float, rescale factor for step size
     :param stride: int, stride for subsampling layer
     :param pooling_mode: str, pooling mode for subsampling layer
@@ -317,10 +319,11 @@ class S5SSM(nn.Module):
                                        (local_P, self.dt_min, self.dt_max))
 
         # Initialize feedthrough (D) matrix
-        if self.H_in == self.H_out:
-            self.D = self.param("D", normal(stddev=1.0), (self.H_in,))
-        else:
-            self.D = self.param("D", glorot_normal(), (self.H_out, self.H_in))
+        if self.use_D:
+            if self.H_in == self.H_out:
+                self.D = self.param("D", normal(stddev=1.0), (self.H_in,))
+            else:
+                self.D = self.param("D", glorot_normal(), (self.H_out, self.H_in))
 
         # pooling layer
         self.pool = EventPooling(stride=self.stride, mode=self.pooling_mode)
@@ -462,6 +465,9 @@ class S5SSM(nn.Module):
                 stride=self.stride
             )
 
+        if not self.use_D:
+            return ys
+
         if self.stride > 1:
             input_sequence, _ = self.pool(input_sequence, integration_timesteps)
 
@@ -479,6 +485,7 @@ def init_S5SSM(
         dt_max,
         conj_sym,
         clip_eigs,
+        use_D=True,
         a_mode="complex_diagonal",
 ):
     """
@@ -491,5 +498,6 @@ def init_S5SSM(
                    dt_max=dt_max,
                    conj_sym=conj_sym,
                    clip_eigs=clip_eigs,
+                   use_D=use_D,
                    a_mode=a_mode,
                    )

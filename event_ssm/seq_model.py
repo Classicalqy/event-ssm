@@ -17,8 +17,11 @@ class StackedEncoderModel(nn.Module):
     :param num_layers_per_stage: the number of EventSSM layers to stack
     :param num_embeddings: the number of embeddings to use
     :param dropout: dropout rate
+    :param activation_fn: nonlinearity to apply after each SSM
+    :param use_residual: whether EventSSM layers use residual connections
     :param prenorm: whether to use layernorm before the module or after it
     :param batchnorm: If True, use batchnorm instead of layernorm
+    :param layernorm: If True, use layernorm when batchnorm is False
     :param bn_momentum: momentum for batchnorm
     :param step_rescale: rescale the integration timesteps by this factor
     :param pooling_stride: stride for subsampling
@@ -35,8 +38,11 @@ class StackedEncoderModel(nn.Module):
     num_layers_per_stage: int
     num_embeddings: int = 0
     dropout: float = 0.0
+    activation_fn: str = "gated_gelu"
+    use_residual: bool = True
     prenorm: bool = False
     batchnorm: bool = False
+    layernorm: bool = True
     bn_momentum: float = 0.9
     step_rescale: float = 1.0
     pooling_stride: int = 1
@@ -72,8 +78,11 @@ class StackedEncoderModel(nn.Module):
                     ssm_block_size=self.ssm_block_size,
                     layers_per_stage=self.num_layers_per_stage,
                     dropout=self.dropout,
+                    activation_fn=self.activation_fn,
+                    use_residual=self.use_residual,
                     prenorm=self.prenorm,
                     batchnorm=self.batchnorm,
+                    layernorm=self.layernorm,
                     bn_momentum=self.bn_momentum,
                     step_rescale=self.step_rescale,
                     pooling_stride=self.pooling_stride,
@@ -178,9 +187,12 @@ class ClassificationModel(nn.Module):
     :param num_layers_per_stage: the number of EventSSM layers to stack
     :param num_embeddings: the number of embeddings to use
     :param dropout: dropout rate
+    :param activation_fn: nonlinearity to apply after each SSM
     :param classification_mode: the classification mode (pool, timepool, last)
+    :param use_residual: whether EventSSM layers use residual connections
     :param prenorm: whether to use layernorm before the module or after it
     :param batchnorm: If True, use batchnorm instead of layernorm
+    :param layernorm: If True, use layernorm when batchnorm is False
     :param bn_momentum: momentum for batchnorm
     :param step_rescale: rescale the integration timesteps by this factor
     :param pooling_stride: stride for subsampling
@@ -198,9 +210,12 @@ class ClassificationModel(nn.Module):
     num_layers_per_stage: int
     num_embeddings: int = 0
     dropout: float = 0.2
+    activation_fn: str = "gated_gelu"
     classification_mode: str = "pool"
+    use_residual: bool = True
     prenorm: bool = False
     batchnorm: bool = False
+    layernorm: bool = True
     bn_momentum: float = 0.9
     step_rescale: float = 1.0
     pooling_stride: int = 1
@@ -223,8 +238,11 @@ class ClassificationModel(nn.Module):
             num_layers_per_stage=self.num_layers_per_stage,
             num_embeddings=self.num_embeddings,
             dropout=self.dropout,
+            activation_fn=self.activation_fn,
+            use_residual=self.use_residual,
             prenorm=self.prenorm,
             batchnorm=self.batchnorm,
+            layernorm=self.layernorm,
             bn_momentum=self.bn_momentum,
             step_rescale=self.step_rescale,
             pooling_stride=self.pooling_stride,

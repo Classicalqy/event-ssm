@@ -54,8 +54,10 @@ class SequenceStage(nn.Module):
     :param ssm_block_size: the block size of the state space model
     :param layers_per_stage: the number of S5 layers to stack
     :param dropout: dropout rate
+    :param activation_fn: nonlinearity to apply after the SSM
     :param prenorm: whether to use layernorm before the module or after it
     :param batchnorm: If True, use batchnorm instead of layernorm
+    :param layernorm: If True, use layernorm when batchnorm is False
     :param bn_momentum: momentum for batchnorm
     :param step_rescale: rescale the integration timesteps by this factor
     :param pooling_stride: stride for pooling
@@ -70,8 +72,11 @@ class SequenceStage(nn.Module):
     ssm_block_size: int
     layers_per_stage: int
     dropout: float = 0.0
+    activation_fn: str = "gated_gelu"
+    use_residual: bool = True
     prenorm: bool = False
     batchnorm: bool = False
+    layernorm: bool = True
     bn_momentum: float = 0.9
     step_rescale: float = 1.0
     pooling_stride: int = 1
@@ -94,10 +99,13 @@ class SequenceStage(nn.Module):
             ssm=self.ssm,
             discretization=self.discretization,
             dropout=self.dropout,
+            activation_fn=self.activation_fn,
+            use_residual=self.use_residual,
             d_ssm=self.d_ssm,
             block_size=self.ssm_block_size,
             prenorm=self.prenorm,
             batchnorm=self.batchnorm,
+            layernorm=self.layernorm,
             bn_momentum=self.bn_momentum,
             step_rescale=self.step_rescale,
             a_mode=self.a_mode,
@@ -134,8 +142,11 @@ class SequenceLayer(nn.Module):
     :param d_model_out: the output feature size
     :param d_ssm: the size of the state space model
     :param block_size: the block size of the state space model
+    :param activation_fn: nonlinearity to apply after the SSM
+    :param use_residual: whether to add the layer input as a residual connection
     :param prenorm: whether to use layernorm before the module or after it
     :param batchnorm: If True, use batchnorm instead of layernorm
+    :param layernorm: If True, use layernorm when batchnorm is False
     :param bn_momentum: momentum for batchnorm
     :param step_rescale: rescale the integration timesteps by this factor
     :param pooling_stride: stride for pooling
@@ -148,13 +159,23 @@ class SequenceLayer(nn.Module):
     d_model_out: int
     d_ssm: int
     block_size: int
+    activation_fn: str = "gated_gelu"
+    use_residual: bool = True
     prenorm: bool = False
     batchnorm: bool = False
+    layernorm: bool = True
     bn_momentum: float = 0.90
     step_rescale: float = 1.0
     pooling_stride: int = 1
     pooling_mode: str = "last"
     a_mode: str = "complex_diagonal"
+
+    def _norm(self):
+        if self.batchnorm:
+            return nn.BatchNorm(momentum=self.bn_momentum, axis_name='batch')
+        if self.layernorm:
+            return nn.LayerNorm()
+        return None
 
     @nn.compact
     def __call__(self, x, integration_timesteps, train: bool):
@@ -169,8 +190,9 @@ class SequenceLayer(nn.Module):
         skip = x
 
         if self.prenorm:
-            norm = nn.BatchNorm(momentum=self.bn_momentum, axis_name='batch') if self.batchnorm else nn.LayerNorm()
-            x = norm(x, use_running_average=not train) if self.batchnorm else norm(x)
+            norm = self._norm()
+            if norm is not None:
+                x = norm(x, use_running_average=not train) if self.batchnorm else norm(x)
 
         # apply state space model
         x = self.ssm(
@@ -179,23 +201,33 @@ class SequenceLayer(nn.Module):
             stride=self.pooling_stride, pooling_mode=self.pooling_mode, a_mode=self.a_mode
         )(x, integration_timesteps)
 
-        # non-linear activation function
-        x1 = nn.Dropout(self.dropout, broadcast_dims=[0], deterministic=not train)(nn.gelu(x))
-        x1 = nn.Dense(self.d_model_out)(x1)
-        x = x * nn.sigmoid(x1)
+        if self.activation_fn == "gated_gelu":
+            x1 = nn.Dropout(self.dropout, broadcast_dims=[0], deterministic=not train)(nn.gelu(x))
+            x1 = nn.Dense(self.d_model_out)(x1)
+            x = x * nn.sigmoid(x1)
+        elif self.activation_fn == "gelu":
+            x = nn.gelu(x)
+        elif self.activation_fn == "relu":
+            x = nn.relu(x)
+        elif self.activation_fn == "identity":
+            pass
+        else:
+            raise NotImplementedError(f"Activation function {self.activation_fn} not implemented")
         x = nn.Dropout(self.dropout, broadcast_dims=[0], deterministic=not train)(x)
 
         if self.pooling_stride > 1:
             pool = EventPooling(stride=self.pooling_stride, mode=self.pooling_mode)
             skip, integration_timesteps = pool(skip, integration_timesteps)
 
-        if self.d_model_in != self.d_model_out:
-            skip = nn.Dense(self.d_model_out)(skip)
+        if self.use_residual:
+            if self.d_model_in != self.d_model_out:
+                skip = nn.Dense(self.d_model_out)(skip)
 
-        x = skip + x
+            x = skip + x
 
         if not self.prenorm:
-            norm = nn.BatchNorm(momentum=self.bn_momentum, axis_name='batch') if self.batchnorm else nn.LayerNorm()
-            x = norm(x, use_running_average=not train) if self.batchnorm else norm(x)
+            norm = self._norm()
+            if norm is not None:
+                x = norm(x, use_running_average=not train) if self.batchnorm else norm(x)
 
         return x, integration_timesteps
