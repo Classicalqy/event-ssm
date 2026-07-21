@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-from event_ssm.seq_model import BatchClassificationModel
+from event_ssm.layers import EventPooling
+from event_ssm.seq_model import BatchClassificationModel, last_valid
 from event_ssm.ssm import apply_rotation_pair, init_S5SSM, rotation_gamma
 
 
@@ -51,6 +52,27 @@ def test_rotation_gamma_reduces_to_real_decay_when_omega_is_zero():
     expected = (jnp.exp(-alpha * dt) - 1.0) / (-alpha)
     assert jnp.allclose(gamma_re, expected, atol=1e-6)
     assert jnp.allclose(gamma_im, jnp.zeros_like(gamma_im), atol=1e-6)
+
+
+def test_last_pooling_uses_last_item_in_each_stride_window():
+    x = jnp.arange(6, dtype=jnp.float32)[:, None]
+    integration_timesteps = jnp.ones((6,), dtype=jnp.float32)
+    pooled, pooled_timesteps = EventPooling(stride=3, mode="last").apply(
+        {},
+        x,
+        integration_timesteps,
+    )
+
+    assert jnp.allclose(pooled[:, 0], jnp.array([2.0, 5.0]))
+    assert jnp.allclose(pooled_timesteps, jnp.array([3.0, 3.0]))
+
+
+def test_last_valid_ignores_padded_tail():
+    x = jnp.arange(6, dtype=jnp.float32)[:, None]
+
+    assert jnp.allclose(last_valid(x, jnp.array(4))[0], 3.0)
+    assert jnp.allclose(last_valid(x, jnp.array(6))[0], 5.0)
+    assert jnp.allclose(last_valid(x, jnp.array(0))[0], 0.0)
 
 
 def test_default_event_ssm_model_initializes_and_applies():

@@ -28,7 +28,7 @@ class EventPooling(nn.Module):
             d_model = x.shape[-1]
 
             if self.mode == 'last':
-                x = x[::self.stride]
+                x = x[self.stride - 1:remaining_timesteps:self.stride]
                 return x, new_integration_timesteps
             elif self.mode == 'avgpool':
                 x = x.reshape(-1, self.stride, d_model).mean(axis=1)

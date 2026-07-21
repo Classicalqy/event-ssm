@@ -167,6 +167,13 @@ def masked_timepool(x, lengths, integration_timesteps, eps=1e-6):
     return integral / T
 
 
+def last_valid(x, length):
+    """
+    Select the final valid timestep from a padded sequence.
+    """
+    return x[np.maximum(length - 1, 0)]
+
+
 # Here we call vmap to parallelize across a batch of input sequences
 batch_masked_meanpool = jax.vmap(masked_meanpool)
 
@@ -282,7 +289,7 @@ class ClassificationModel(nn.Module):
 
         elif self.classification_mode in ["last"]:
             # Just take the last state
-            x = x[-1]
+            x = last_valid(x, length)
         else:
             raise NotImplementedError("Mode must be in ['pool', 'last]")
 
